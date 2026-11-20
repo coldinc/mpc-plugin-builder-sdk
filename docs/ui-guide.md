@@ -70,7 +70,9 @@ For full control over the look (images, custom widgets, envelopes), read `ui-ref
 | `kit` | The film-strip theme for `knob` / `fader` / `switch`: `"mpc-red"` (assumed when absent), `"amber"`, `"cyan"`, `"lime"`, `"violet"`, `"mono"`, or `{ "theme": "...", "accent": "AARRGGBB" }`. See `ui-kit/README.md` and `ui-kit/preview.png`. |
 | `style` | Optional ARGB colours: `background`, `accent` (focus ring; follows the kit colour unless set), `text`, `muted`. |
 | `qlinkGroups` | `"columns"` (default) or `"rows"`: whether a Q-Link group of four (and its on-screen rectangle) is a column or a row of the 4 × 4 grid. One setting for the whole plugin. |
-| `knobImage`, `knobFrames` | Optional: your own film-strip PNG from the project's `assets/` folder for `"knob"` widgets instead of the kit's. `tools/make_knob.py` can generate a plain one. |
+| `knobImage`, `knobFrames` | Optional: your own film-strip PNG from the project's `assets/` folder for `"knob"` widgets instead of the kit's: a vertical strip of square frames, minimum at the top. The frame size is read from the file (up to 107 px, the slot height). `tools/make_knob.py` can generate a plain one. |
+| `nameCase` | Optional: `"original"` (default) or `"upper"`. Upper shows parameter names and switch captions in capitals, like printed panel lettering; value text is unchanged. |
+| `kitImages` | Optional: your own PNGs from `assets/` in place of the kit's switch images, as `{"toggle_on": "...", "toggle_off": "..."}` (bool switches) and `{"seg2_on": "...", "seg2_off": "..."}` (2-way choice switches; also `seg3_*`, `seg4_*`). Give the lit and unlit image together. Buttons are drawn centred at their native size, never scaled, so each must fit its space: toggles 84 × 68, segments 122 / 80 / 58 × 40 for 2 / 3 / 4 choices. |
 
 Every bool and choice parameter you reference is given discrete steps on the data wheel and the overlay, using the choice labels from your code.
 
@@ -114,4 +116,4 @@ To go from generated to hand-written, copy `build/<folder>/Plugin Skins/` to `pl
 
 ## What the generator cannot do
 
-Vertical faders, custom graphics beyond the kit, envelope displays, XY pads and sub-tabs. All are possible in the full format; see `ui-reference.md` and the hand-written section of `ui-kit/README.md`.
+Vertical faders, custom fader graphics (knobs and switches can use your own art through `knobImage` and `kitImages`), envelope displays, XY pads and sub-tabs. All are possible in the full format; see `ui-reference.md` and the hand-written section of `ui-kit/README.md`.
