@@ -63,6 +63,7 @@ What the host sends, in order, when the user adds the plugin to a track:
 
 - The host selects program 0 after loading and reads every program name. If your plugin reports it cannot name programs by index, the host walks through them by selecting each one in turn, which is slow and audible, so always answer the indexed-name query (the framework does).
 - The program number is saved in the project and restored on load.
+- The host does not re-read parameter values after selecting a program, so the plugin has to report them: the framework's program change sends `audioMasterAutomate` for every parameter, then one `audioMasterUpdateDisplay`. Without that the screen keeps showing the previous program's settings while the sound has changed.
 
 ## State
 

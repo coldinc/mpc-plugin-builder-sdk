@@ -44,6 +44,9 @@ with annotated git tags (`v1.0`, `v1.1`, ...).
   parameter bound to its handle, or MPC OS 3.10.1 draws nothing.
 - Switch segments respond to touch again: their captions sat on top of the buttons and took the
   touch. The docs no longer say Labels let touches through (seen on an MPC Live II, MPC OS 3.10.1).
+- Choosing a built-in program now updates the MPC screen. The framework reports every parameter
+  to the host (`audioMasterAutomate`) and asks for a display update; before, the dials kept
+  showing the previous program's settings while the sound had changed.
 
 ## 1.0
 
