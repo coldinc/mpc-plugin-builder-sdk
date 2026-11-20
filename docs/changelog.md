@@ -13,6 +13,13 @@ with annotated git tags (`v1.0`, `v1.1`, ...).
   the whole plugin.
 - New validator checks: Q-Link rectangles that cut through a control, run off the tab area or sit
   unevenly (also for hand-written skins).
+- **`ui.json` `kitImages`**: your own PNGs from `assets/` in place of the kit's switch images
+  (`toggle_on`/`toggle_off`, `seg2_*`, `seg3_*`, `seg4_*`), given lit and unlit together. The
+  generator warns when one is missing or too big for its space (buttons are never scaled).
+- **`ui.json` `nameCase`** (`"original"` default, or `"upper"`): parameter names and switch
+  captions in capitals.
+- New validator checks: a Label on top of a Button, and a fixed-text Label with no parameter bound
+  to its handle.
 
 ### Changed
 
@@ -25,10 +32,21 @@ with annotated git tags (`v1.0`, `v1.1`, ...).
 - Skills and `AGENTS.md` ask after a clean build whether you want a test install on a standalone MPC,
   and must wait for a yes before installing, updating or removing anything. A clean build or an
   earlier yes is not permission.
+- A `knobImage` film strip's frame size is read from the file (up to 107 px) instead of being
+  assumed to be 77 px; the generator warns when the strip does not match `knobFrames`.
+- Two-to-four-way switches show the name and current choice on the top row, with a caption row above
+  the segment buttons.
 
 ### Fixed
 
 - `gen_ui.py` warns when a page `background` image is missing from `assets/`.
+- Switch segment captions and `text` widgets now draw on the MPC: a fixed-text Label needs a
+  parameter bound to its handle, or MPC OS 3.10.1 draws nothing.
+- Switch segments respond to touch again: their captions sat on top of the buttons and took the
+  touch. The docs no longer say Labels let touches through (seen on an MPC Live II, MPC OS 3.10.1).
+- Choosing a built-in program now updates the MPC screen. The framework reports every parameter
+  to the host (`audioMasterAutomate`) and asks for a display update; before, the dials kept
+  showing the previous program's settings while the sound had changed.
 
 ## 1.0
 

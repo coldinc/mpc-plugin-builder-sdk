@@ -57,7 +57,8 @@ OVERLAYS = ("knob", "menu")
 POLARITIES = ("auto", "unipolar", "bipolar")
 CONTROL_KEYS = ("param", "widget", "visibleWhen", "text", "overlay", "polarity")
 PAGE_KEYS = ("name", "controls", "background")
-UI_KEYS = ("pages", "style", "kit", "knobImage", "knobFrames", "qlinkGroups")
+UI_KEYS = ("pages", "style", "kit", "knobImage", "knobFrames", "kitImages", "nameCase", "qlinkGroups")
+NAME_CASES = {"original": "Original", "upper": "Upper Case"}
 KIT_KEYS = ("theme", "accent")
 KIT_WIDGETS = ("knob", "fader", "switch")
 MAX_SWITCH_CHOICES = 4
@@ -65,6 +66,27 @@ BIPOLAR_ZERO_RE = re.compile(r"^[+-]?0*(\.0+)?\s*[^0-9.]*$")
 
 # Segment buttons for choice switches: (asset width, x positions in the slot) per choice count.
 SEGMENTS = {2: (122, [15, 141]), 3: (80, [15, 99, 183]), 4: (58, [15, 77, 139, 201])}
+SEG_H = 40
+TOGGLE_BOUNDS = (186, 20, 84, 68)      # x y w h of the toggle button inside a switch slot
+
+# Kit images a ui.json may replace with its own PNG from assets/ ("kitImages"), and the largest size each may be.
+# Buttons are drawn centred in their bounds at native size, never scaled, so a bigger image would spill over.
+KIT_IMAGE_LIMITS = {"toggle_on": TOGGLE_BOUNDS[2:], "toggle_off": TOGGLE_BOUNDS[2:]}
+for _n, (_w, _xs) in SEGMENTS.items():
+    KIT_IMAGE_LIMITS["seg%d_on" % _n] = KIT_IMAGE_LIMITS["seg%d_off" % _n] = (_w, SEG_H)
+KNOB_MAX = 107                          # a knob frame larger than the slot height would spill out of its slot
+
+
+def png_size(path):
+    """(width, height) of a PNG file, or None if it cannot be read as one."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+    except OSError:
+        return None
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
 
 
 def slot_qlink(row, col):
@@ -388,12 +410,35 @@ def load_ui(path, table):
 
     kit = parse_kit(data.get("kit"), path, "accent" in data.get("style", {}), style)
 
+    name_case = data.get("nameCase", "original")
+    if name_case not in NAME_CASES:
+        fail(path, '"nameCase" must be "original" or "upper", got %s' % json.dumps(name_case),
+             '"upper" shows parameter names and switch captions in capitals, like printed panel lettering.')
+    style["nameCase"] = NAME_CASES[name_case]   # not a colour: carried with the style to the label builders
+
     knob_image = data.get("knobImage")
     if knob_image is not None and (not isinstance(knob_image, str) or not knob_image.strip()):
         fail(path, '"knobImage" must be a file name (a PNG film strip in the project\'s assets/ folder, which build.py copies into Plugin Skins/)')
     frames = data.get("knobFrames", 127)
     if not isinstance(frames, int) or isinstance(frames, bool) or frames < 2:
         fail(path, '"knobFrames" must be an integer >= 2 (number of frames in the film strip), got %s' % json.dumps(frames))
+
+    kit_images = data.get("kitImages", {})
+    if not isinstance(kit_images, dict):
+        fail(path, '"kitImages" must be an object mapping kit image names to PNG files in assets/, like {"toggle_on": "my_on.png"}')
+    for k, v in kit_images.items():
+        if k not in KIT_IMAGE_LIMITS:
+            fail(path + ' "kitImages"', 'unknown kit image "%s"; replaceable images are %s' % (k, ", ".join(sorted(KIT_IMAGE_LIMITS))),
+                 'Knobs use "knobImage" instead.')
+        if not isinstance(v, str) or not v.strip():
+            fail(path + ' "kitImages"', '"%s" must be a PNG file name in the project\'s assets/ folder' % k)
+    for n in SEGMENTS:
+        on, off = "seg%d_on" % n, "seg%d_off" % n
+        if (on in kit_images) != (off in kit_images):
+            fail(path + ' "kitImages"', 'give "%s" and "%s" together (lit and unlit segment)' % (on, off))
+    if ("toggle_on" in kit_images) != ("toggle_off" in kit_images):
+        fail(path + ' "kitImages"', 'give "toggle_on" and "toggle_off" together')
+    kit_images = {k: os.path.basename(v) for k, v in kit_images.items()}
 
     pages = []
     for pi, pspec in enumerate(pages_spec):
@@ -420,6 +465,8 @@ def load_ui(path, table):
         pages.append(Page(name, controls, os.path.basename(bg)))
 
     uses_kit = any(c.widget in KIT_WIDGETS for pg in pages for c in pg.controls)
+    if kit_images and not any(c.widget == "switch" for pg in pages for c in pg.controls):
+        print('gen_ui: NOTE: "kitImages" is set but no control is a "switch"; the images are not used.')
     if kit is None and uses_kit:
         kit = {"theme": "mpc-red", "accent": style["accent"] if "accent" in data.get("style", {}) else None}
     if uses_kit:
@@ -430,7 +477,7 @@ def load_ui(path, table):
     if groups not in QLINK_GROUPS:
         fail(path, '"qlinkGroups" must be "columns" or "rows", got %s' % json.dumps(groups),
              "It says whether a Q-Link group of four is a column or a row of the 4 x 4 grid.")
-    return pages, style, knob_image, frames, kit, groups
+    return pages, style, knob_image, frames, kit, groups, kit_images
 
 
 def parse_kit(spec, path, accent_in_style, style):
@@ -524,11 +571,11 @@ def button_data(on_image, off_image, button_id, group_size):
                ("numButtonsInGroup", group_size), ("handleName", "Data"), ("gestureBehaviour", "Instant"))
 
 
-def label_data(label_type, colour, height=30.0, justification="left", text=None):
+def label_data(label_type, colour, height=30.0, justification="left", text=None, case="Original"):
     pairs = [("version", 1),
              ("textStyle", obj(("version", 1),
                                ("font", obj(("version", 1), ("name", FONT_NAME), ("style", "Regular"), ("height", float(height)))),
-                               ("colour", colour), ("justification", justification), ("case", "Original"))),
+                               ("colour", colour), ("justification", justification), ("case", case))),
              ("type", label_type), ("handleName", "Data")]
     if text is not None:
         pairs.append(("text", text))
@@ -587,14 +634,14 @@ def knob_component(style, overlay_name, knob_image, frames, bipolar=False):
         tx, tw = kx + size + 12, 266 - kx - size - 12
         children = [focus_child(style),
                     entry("knob", "Knob", knob, "%d %d %d %d" % (kx, ky, size, size), "No", "Show", "Always"),
-                    entry("name", "Label", label_data("Name", style["muted"], 26.0), "%d 12 %d 36" % (tx, tw), "No", "Show", "Always"),
+                    entry("name", "Label", label_data("Name", style["muted"], 26.0, case=style["nameCase"]), "%d 12 %d 36" % (tx, tw), "No", "Show", "Always"),
                     entry("value", "Label", label_data("Value", style["text"], 30.0), "%d 52 %d 42" % (tx, tw), "No", "Show", "Always")]
     else:
         knob = obj(("version", 5), ("knobType", "GenericLegacy"), ("polarity", "BiPolar" if bipolar else "UniPolar"),
                    ("dragOrientation", "Vertical"), ("handleName", "Data"))
         children = [focus_child(style),
                     entry("knob", "Knob", knob, "15 15 77 77", "No", "Show", "Always"),
-                    entry("name", "Label", label_data("Name", style["muted"], 26.0), "104 14 160 38", "No", "Show", "Always"),
+                    entry("name", "Label", label_data("Name", style["muted"], 26.0, case=style["nameCase"]), "104 14 160 38", "No", "Show", "Always"),
                     entry("value", "Label", label_data("Value", style["text"], 30.0), "104 54 160 40", "No", "Show", "Always")]
     return component_definition(control_actions(overlay_name), children, "00000000")
 
@@ -602,29 +649,40 @@ def knob_component(style, overlay_name, knob_image, frames, bipolar=False):
 def fader_component(style, overlay_name, image, frames):
     """A horizontal film-strip fader (248 x 36) under a name / value header. Drawn by the Knob widget with a horizontal drag."""
     children = [focus_child(style),
-                entry("name", "Label", label_data("Name", style["muted"], 24.0), "15 8 135 34", "No", "Show", "Always"),
+                entry("name", "Label", label_data("Name", style["muted"], 24.0, case=style["nameCase"]), "15 8 135 34", "No", "Show", "Always"),
                 entry("value", "Label", label_data("Value", style["text"], 26.0, "right"), "150 8 113 34", "No", "Show", "Always"),
                 entry("fader", "Knob", knob_filmstrip_data(image, frames, "Horizontal"), "15 54 248 36", "No", "Show", "Always")]
     return component_definition(control_actions(overlay_name), children, "00000000")
 
 
-def toggle_component(style, overlay_name):
-    """A bool switch: name and value text on the left, a pill toggle (Button widget) on the right."""
+def toggle_component(style, overlay_name, on_image="toggle_on.png", off_image="toggle_off.png"):
+    """A bool switch: name and value text on the left, a toggle (Button widget, image centred) on the right."""
     children = [focus_child(style),
-                entry("name", "Label", label_data("Name", style["muted"], 26.0), "15 12 170 36", "No", "Show", "Always"),
+                entry("name", "Label", label_data("Name", style["muted"], 26.0, case=style["nameCase"]), "15 12 170 36", "No", "Show", "Always"),
                 entry("value", "Label", label_data("Value", style["text"], 30.0), "15 52 170 42", "No", "Show", "Always"),
-                entry("toggle", "Button", button_data("toggle_on.png", "toggle_off.png", 1, 1), "186 20 84 68", "No", "Show", "Always")]
+                entry("toggle", "Button", button_data(on_image, off_image, 1, 1), "%d %d %d %d" % TOGGLE_BOUNDS, "No", "Show", "Always")]
     return component_definition(control_actions(overlay_name, double_click=False), children, "00000000")
 
 
-def radio_component(style, overlay_name, n):
-    """An n-way choice switch: name on top, n segment buttons below (their captions are added by the tab)."""
+SEG_CAPTION_Y, SEG_CAPTION_H = 33, 24   # caption row of an n-way switch, inside its slot
+SEG_BUTTON_Y = 60                      # segment buttons sit below the captions, never under them
+
+
+def radio_component(style, overlay_name, n, on_image=None, off_image=None):
+    """An n-way choice switch: name and current choice on the top row, a caption per segment (added by the tab,
+    since the definition is shared) on the next row, and n segment buttons at the bottom.
+
+    Nothing may overlap the buttons: on the MPC a Label on top of a Button takes the touch, so the button no
+    longer responds (observed on an MPC Live II, MPC OS 3.10.1)."""
     width, xs = SEGMENTS[n]
     children = [focus_child(style),
-                entry("name", "Label", label_data("Name", style["muted"], 24.0), "15 8 248 34", "No", "Show", "Always")]
+                entry("name", "Label", label_data("Name", style["muted"], 22.0, "left verticallyCentred", case=style["nameCase"]),
+                      "15 4 120 28", "No", "Show", "Always"),
+                entry("value", "Label", label_data("Value", style["text"], 22.0, "right verticallyCentred"),
+                      "135 4 128 28", "No", "Show", "Always")]
     for i, x in enumerate(xs):
-        children.append(entry("seg %d" % i, "Button", button_data("seg%d_on.png" % n, "seg%d_off.png" % n, i, n),
-                              "%d 54 %d 40" % (x, width), "No", "Show", "Always"))
+        children.append(entry("seg %d" % i, "Button", button_data(on_image or "seg%d_on.png" % n, off_image or "seg%d_off.png" % n, i, n),
+                              "%d %d %d %d" % (x, SEG_BUTTON_Y, width, SEG_H), "No", "Show", "Always"))
     return component_definition(control_actions(overlay_name, double_click=False), children, "00000000")
 
 
@@ -677,24 +735,32 @@ def tab_component(page, style):
         if ctl.widget == "empty":
             continue
         if ctl.widget == "text":
+            # A fixed-text Label still needs a valid "Data" handle: with none bound, the MPC draws no text
+            # (observed on MPC OS 3.10.1). Any parameter will do; the Text type ignores its value.
             children.append(entry("text %d" % i, "Label", label_data("Text", style["text"], 30.0, "left", ctl.text),
-                                  bounds, "No", "Show", "Always", invalidating=invalidating))
+                                  bounds, "No", "Show", "Always", remap=[("Data", "Parameter 0")],
+                                  invalidating=invalidating))
             continue
         children.append(entry(ctl.param.name, ctl.definition, obj(("version", 1), ("handleName", "Data")), bounds,
                               "Yes", "Hide", "Always", remap=[("Data", ctl.param.handle)], invalidating=invalidating))
         if ctl.definition.startswith("radio"):
-            # Segment captions live in the tab (the definition is shared by every n-way switch).
+            # Segment captions live in the tab (the definition is shared by every n-way switch). Each one is
+            # bound to the switch's parameter, because a fixed-text Label with no valid handle draws nothing, and
+            # sits in the caption row ABOVE its segment: a Label over a Button swallows the touch.
             width, xs = SEGMENTS[len(ctl.param.choices)]
             for ci, (choice, x) in enumerate(zip(ctl.param.choices, xs)):
                 children.append(entry("%s seg %d" % (ctl.param.name, ci), "Label",
-                                      label_data("Text", style["text"], 22.0, "horizontallyCentred verticallyCentred", choice),
-                                      "%d %d %d 40" % (SLOT_X[col] + x, SLOT_Y[row] + 54, width),
-                                      "No", "Hide", "Always", invalidating=invalidating))
+                                      label_data("Text", style["muted"], 18.0, "horizontallyCentred verticallyCentred", choice, style["nameCase"]),
+                                      "%d %d %d %d" % (SLOT_X[col] + x, SLOT_Y[row] + SEG_CAPTION_Y, width, SEG_CAPTION_H),
+                                      "No", "Hide", "Always", remap=[("Data", ctl.param.handle)],
+                                      invalidating=invalidating))
     return component_definition([], children, style["background"], bg_image=page.background)
 
 
 def build_tui(pages, params, style, knob_image, frames, kit_assets, groups="columns"):
-    """kit_assets: dict asset name -> (file, frames, (w, h)) for the kit files available, or {} without a kit."""
+    """knob_image: (file, frames, size) of a custom knob film strip, or None.
+    kit_assets: dict asset name -> (file, frames, (w, h)) for the kit files available (with any kitImages
+    already swapped in), or {} without a kit."""
     used = []
     for page in pages:
         for ctl in page.controls:
@@ -717,7 +783,7 @@ def build_tui(pages, params, style, knob_image, frames, kit_assets, groups="colu
             comp = slider_component(style, overlay)
         elif base in ("knobUni", "knobBi"):
             if knob_image:
-                comp = knob_component(style, overlay, (knob_image, frames, 77), frames, bipolar=(base == "knobBi"))
+                comp = knob_component(style, overlay, knob_image, frames, bipolar=(base == "knobBi"))
             elif kit_assets:
                 f, n, size = kit("knob_uni" if base == "knobUni" else "knob_bi")
                 comp = knob_component(style, overlay, (f, n, size[0]), n, bipolar=(base == "knobBi"))
@@ -727,12 +793,10 @@ def build_tui(pages, params, style, knob_image, frames, kit_assets, groups="colu
             f, n, _ = kit("fader_h_uni" if base == "faderUni" else "fader_h_bi")
             comp = fader_component(style, overlay, f, n)
         elif base == "toggle":
-            kit("toggle_on"), kit("toggle_off")
-            comp = toggle_component(style, overlay)
+            comp = toggle_component(style, overlay, kit("toggle_on")[0], kit("toggle_off")[0])
         elif base.startswith("radio"):
             n = int(base[5:])
-            kit("seg%d_on" % n), kit("seg%d_off" % n)
-            comp = radio_component(style, overlay, n)
+            comp = radio_component(style, overlay, n, kit("seg%d_on" % n)[0], kit("seg%d_off" % n)[0])
         else:
             fail(None, "internal error: no builder for component %s" % name)
         defs.append((name, comp))
@@ -828,14 +892,29 @@ def generate(params_path, ui_path, out_dir, assets_dir=None, quiet=False, kit_ca
     params = load_params(params_path)
     table = ParamTable(params)
     if ui_path:
-        pages, style, knob_image, frames, kit, groups = load_ui(ui_path, table)
+        pages, style, knob_image, frames, kit, groups, kit_images = load_ui(ui_path, table)
     else:
         pages, style, knob_image, frames, kit, groups = auto_pages(params), dict(DEFAULT_STYLE), None, 127, None, "columns"
+        kit_images = {}
+        style["nameCase"] = NAME_CASES["original"]
+    if not assets_dir and ui_path and os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(ui_path)), "assets")):
+        assets_dir = os.path.join(os.path.dirname(os.path.abspath(ui_path)), "assets")  # the project's assets/
     if knob_image:
         knob_image = os.path.basename(knob_image)
+        size = 77   # what tools/make_knob.py draws by default; used when the file cannot be read
+        dims = png_size(os.path.join(assets_dir, knob_image)) if assets_dir else None
         if assets_dir and not os.path.isfile(os.path.join(assets_dir, knob_image)):
             print('gen_ui: WARNING: knobImage "%s" not found in %s; the knob will render blank on the MPC.'
                   ' (tools/make_knob.py can generate one.)' % (knob_image, assets_dir))
+        elif dims:
+            size = dims[0]
+            if dims[1] != dims[0] * frames:
+                print('gen_ui: WARNING: knobImage "%s" is %d x %d, which is not %d square frames of %d px'
+                      ' (knobFrames is %d); the knob will show the wrong frames.' % (knob_image, dims[0], dims[1], frames, dims[0], frames))
+            if size > KNOB_MAX:
+                print('gen_ui: WARNING: knobImage "%s" frames are %d px wide; more than %d px spills out of the control slot.'
+                      % (knob_image, size, KNOB_MAX))
+        knob_image = (knob_image, frames, size)
     if assets_dir:
         for pg in pages:
             if pg.background and not os.path.isfile(os.path.join(assets_dir, pg.background)):
@@ -846,6 +925,16 @@ def generate(params_path, ui_path, out_dir, assets_dir=None, quiet=False, kit_ca
 
     os.makedirs(out_dir, exist_ok=True)
     kit_dir, kit_assets = (kit_dir_for(kit, kit_cache, out_dir) if kit else (None, {}))
+    for name, f in sorted(kit_images.items()):
+        dims = png_size(os.path.join(assets_dir, f)) if assets_dir else None
+        if assets_dir and not os.path.isfile(os.path.join(assets_dir, f)):
+            print('gen_ui: WARNING: kitImages "%s" file "%s" not found in %s; it will render blank on the MPC.' % (name, f, assets_dir))
+        elif dims:
+            lw, lh = KIT_IMAGE_LIMITS[name]
+            if dims[0] > lw or dims[1] > lh:
+                print('gen_ui: WARNING: kitImages "%s" (%s) is %d x %d; it must fit in %d x %d (buttons are drawn at'
+                      ' native size, centred, not scaled), or it spills over its neighbours.' % (name, f, dims[0], dims[1], lw, lh))
+        kit_assets[name] = (f, 1, dims or KIT_IMAGE_LIMITS[name])
     tui = build_tui(pages, params, style, knob_image, frames, kit_assets, groups)
     qlinks = build_qlinks(pages, params, groups)
     if kit_dir and os.path.abspath(kit_dir) != os.path.abspath(out_dir):

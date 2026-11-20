@@ -53,6 +53,24 @@ Auto draws the centre-zero strip when the parameter's default sits at the centre
 range and reads as zero (`0`, `0.0 dB`, `+0 st`). A parameter such as an envelope amount
 of -100..100 % with a default of 40 needs `"polarity": "bipolar"` spelled out.
 
+### Your own artwork
+
+Two `ui.json` keys swap kit graphics for PNGs in the project's `assets/` folder (the build
+copies them into `Plugin Skins/`) while keeping the generated layout:
+
+```json
+"knobImage": "my_knob.png", "knobFrames": 127,
+"kitImages": { "toggle_on": "lever_up.png", "toggle_off": "lever_down.png",
+               "seg2_on": "key_on.png", "seg2_off": "key_off.png" }
+```
+
+`knobImage` is a vertical strip of square frames (frame 0 = minimum at the top), up to 107 px
+square; the generator reads the size from the file. `kitImages` replaces the bool toggle and the
+2-, 3- or 4-way segment images, lit and unlit together; they are drawn centred at native size, so
+keep toggles within 84 × 68 and segments within 122 / 80 / 58 × 40. Name and value text stay
+generated; colour them with `style`. Draw the images in any editor, or generate them with a small
+script (as `tools/make_knob.py` does) so they are easy to tweak and re-render.
+
 See `docs/ui-guide.md` for the whole `ui.json` format and the design heuristics.
 
 ## Hand-written skins
@@ -75,8 +93,8 @@ with frame 0 (minimum) at the top; 127 frames puts the bipolar centre on frame 6
 | `fader_h_uni.png`, `fader_h_bi.png` | 248 × 36 | 127 | `Knob`, `knobType: "FilmStrip"`, version 3, `dragOrientation: "Horizontal"` |
 | `fader_v_uni.png`, `fader_v_bi.png` | 36 × 160 | 127 | `Knob`, `knobType: "FilmStrip"` (vertical drag, the default) |
 | `toggle_on.png`, `toggle_off.png` | 64 × 32 | 1 | `Button`, `numButtonsInGroup: 1`, `buttonId: 1` |
-| `button_on.png`, `button_off.png` | 120 × 44 | 1 | `Button`; put a `Label` on top for the caption |
-| `seg2_*.png`, `seg3_*.png`, `seg4_*.png` | 122 / 80 / 58 × 40 | 1 | `Button` radio group (`numButtonsInGroup: n`, `buttonId: 0..n-1`) with a `Label` caption each |
+| `button_on.png`, `button_off.png` | 120 × 44 | 1 | `Button`; put its caption `Label` beside or above it, never on top (see below) |
+| `seg2_*.png`, `seg3_*.png`, `seg4_*.png` | 122 / 80 / 58 × 40 | 1 | `Button` radio group (`numButtonsInGroup: n`, `buttonId: 0..n-1`) with a `Label` caption each, in a row above the segments |
 
 A horizontal fader entry:
 
@@ -90,7 +108,9 @@ A toggle entry (lit when the bool is on):
 {"version": 2, "onImage": "toggle_on.png", "offImage": "toggle_off.png", "buttonId": 1, "numButtonsInGroup": 1, "handleName": "Data", "gestureBehaviour": "Instant"}
 ```
 
-Labels do not intercept touches, so a caption `Label` can sit over a button. `kit.json` in
+Never put a `Label` on top of a button: on the MPC the label takes the touch and the button stops
+responding (seen on an MPC Live II, MPC OS 3.10.1). Put captions beside or above their buttons, and bind a
+fixed-text label's `Data` handle to a parameter, or it draws no text. `kit.json` in
 the rendered folder lists every asset's size and the theme colours, for layouts that want
 to match them.
 

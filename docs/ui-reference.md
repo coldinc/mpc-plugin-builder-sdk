@@ -884,7 +884,7 @@ Text: the parameter's name, its current value string, or fixed text.
 | `version` | int | exactly `1` | |
 | `textStyle` | TextStyleData | | Font, colour, justification, case. |
 | `type` | enum | `"Name"`, `"Value"`, `"Text"` | `Name` shows the bound parameter's name; `Value` its display string (or the `replacementStrings` label); `Text` shows the `text` key. |
-| `handleName` | handle | `"Data"` | Ignored for `Text`, but must still be present (use `"Invalid"` or `"Data"`). |
+| `handleName` | handle | `"Data"` | For `Text` the value is not shown, but the handle must still resolve to a real parameter (bind `Data` to any `Parameter N` in the entry's `handle remapping`): on MPC OS 3.10.1 a fixed-text Label whose handle is unbound or `"Invalid"` draws no text. |
 | `text` | string | only when `type` is `"Text"` | The fixed text. |
 
 Key order: `version, textStyle, type, handleName, [text]`.
@@ -928,13 +928,19 @@ Fixed text:
   "version": 1,
   "textStyle": {"version": 1, "font": {"version": 1, "name": "Roboto", "style": "Light", "height": 22.0}, "colour": "ff6a6a6c", "justification": "horizontallyCentred verticallyCentred", "case": "Original"},
   "type": "Text",
-  "handleName": "Invalid",
+  "handleName": "Data",
   "text": "FILTER"
 }
 ```
 
-Binds to: a parameter handle for `Name` and `Value`. Labels do not edit the
-value and do not take focus; set `acceptsHWFocus: "No"` on their entry.
+with `"handle remapping": {"version": 1, "map": [{"key": "Data", "value": "Parameter 0"}]}` on its entry
+(any existing parameter; the Text type does not show its value).
+
+Binds to: a parameter handle for `Name` and `Value`, and for `Text` too (see
+`handleName` above). Labels do not edit the value and do not take focus; set
+`acceptsHWFocus: "No"` on their entry. They do take touches: a Label placed on
+top of a Button stops the button responding, so keep captions beside or above
+their buttons (observed on an MPC Live II, MPC OS 3.10.1).
 
 ### 6.4 Button (well-trodden)
 

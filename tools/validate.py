@@ -490,6 +490,48 @@ def check_qlink_rects(rep, tabs):
         rep.ok("TUI.json: Q-Link group rectangles enclose their controls evenly")
 
 
+def check_tab_labels(rep, tabs, definitions):
+    """Two Label pitfalls seen on the MPC (Live II, MPC OS 3.10.1):
+    - a fixed-text Label placed directly in a tab with no parameter bound to its handle draws no text, whatever
+      showWhenDataModelInvalid says (and with "Show" it is still there, invisibly, taking touches);
+    - a Label on top of a Button takes the touch, so the button stops responding.
+    definitions: {name: componentDefinition} from pageData.componentDefinitions.localComponentDefinitions."""
+    for ti, tab in enumerate(tabs):
+        comp = tab.get("componentDefinition") if isinstance(tab, dict) else None
+        children = comp.get("componentsData") if isinstance(comp, dict) else None
+        if not isinstance(children, list):
+            continue
+        name = tab.get("tabName", "tab %d" % (ti + 1))
+        buttons = []   # absolute boxes of Buttons inside this tab's custom components
+        labels = []
+        for ch in children:
+            try:
+                cd, b = ch["componentData"], ch["bounds"]
+                box = parse_box(b["bounds"]) if b.get("boundsType", "Absolute") == "Absolute" else None
+                if cd.get("type") == "Label":
+                    labels.append((cd.get("name"), box))
+                    remap = (ch.get("handle remapping") or {}).get("map") or []
+                    if cd["data"].get("type") == "Text" and not remap:
+                        rep.warn('Tab "%s": the fixed-text label "%s" (%s) has no parameter bound to its handle, so the '
+                                 'MPC draws no text for it; bind its "Data" handle to a parameter in "handle remapping"'
+                                 % (name, cd.get("name"), json.dumps(cd["data"].get("text"))))
+                elif box and cd.get("type") in definitions:
+                    for sub in definitions[cd["type"]].get("componentsData") or []:
+                        sb = sub.get("bounds", {})
+                        if sub.get("componentData", {}).get("type") == "Button" and sb.get("boundsType", "Absolute") == "Absolute":
+                            r = parse_box(sb.get("bounds"))
+                            if r:
+                                buttons.append((cd.get("name"), (box[0] + r[0], box[1] + r[1], box[0] + r[2], box[1] + r[3])))
+            except (KeyError, TypeError, AttributeError):
+                continue
+        for lname, lb in labels:
+            for owner, bb in buttons:
+                if lb and min(lb[2], bb[2]) - max(lb[0], bb[0]) > 0 and min(lb[3], bb[3]) - max(lb[1], bb[1]) > 0:
+                    rep.warn('Tab "%s": the label "%s" sits on top of a button of "%s"; on the MPC the label takes the '
+                             'touch and the button stops responding. Move the label off the button.' % (name, lname, owner))
+                    break
+
+
 def check_skins(rep, skins_dir, nparams):
     tui_path = os.path.join(skins_dir, "TUI.json")
     q_path = os.path.join(skins_dir, "Q-Links.json")
@@ -515,6 +557,12 @@ def check_skins(rep, skins_dir, nparams):
                 else:
                     tabs_in_tui = len(tabs)
                     check_qlink_rects(rep, tabs)
+                    defs = {}
+                    cdefs = page.get("componentDefinitions")
+                    for d in (cdefs.get("localComponentDefinitions") or []) if isinstance(cdefs, dict) else []:
+                        if isinstance(d, dict) and isinstance(d.get("value"), dict):
+                            defs[d.get("key")] = d["value"]
+                    check_tab_labels(rep, tabs, defs)
                     if len(tabs) > MAX_TABS:
                         rep.error("TUI.json: %d tabs; at most %d are supported" % (len(tabs), MAX_TABS))
                     seen = {}

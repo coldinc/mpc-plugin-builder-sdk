@@ -558,6 +558,10 @@ public:
         const Program& p = programs_[(size_t)i];
         for (int k = 0; k < numParams() && k < (int)p.plainValues.size(); ++k) set(k, p.plainValues[(size_t)k]);
         stateLoadPending_.store(true, std::memory_order_release);
+        // Tell the host the new values, or the MPC keeps showing the previous program's
+        // settings on screen while the sound has already changed.
+        for (int k = 0; k < numParams(); ++k) notifyHostParameterChanged(k);
+        requestDisplayUpdate();
     }
 
     std::string displayText(int i)

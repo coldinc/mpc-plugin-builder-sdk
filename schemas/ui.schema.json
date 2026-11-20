@@ -87,7 +87,7 @@
         "knobImage": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional PNG film strip (vertical strip of frames) in the project's assets/ folder (build.py copies assets/ into Plugin Skins/), used by every \"knob\" widget instead of the kit knob. tools/make_knob.py can generate a plain one.",
+            "description": "Optional PNG film strip (vertical strip of frames) in the project's assets/ folder (build.py copies assets/ into Plugin Skins/), used by every \"knob\" widget instead of the kit knob. Square frames up to 107 px; the size is read from the file. tools/make_knob.py can generate a plain one.",
             "examples": [
                 "knob.png"
             ]
@@ -97,6 +97,30 @@
             "minimum": 2,
             "default": 127,
             "description": "Number of frames in knobImage."
+        },
+        "nameCase": {
+            "type": "string",
+            "enum": ["original", "upper"],
+            "default": "original",
+            "description": "\"upper\" shows parameter names and switch captions in capitals, like printed panel lettering. Value text is unchanged."
+        },
+        "kitImages": {
+            "type": "object",
+            "description": "Optional PNGs from the project's assets/ folder that replace the kit's switch images, lit and unlit together. Drawn centred at native size: toggles must fit 84 x 68, 2/3/4-way segments 122/80/58 x 40.",
+            "properties": {
+                "toggle_on": {"type": "string", "minLength": 1},
+                "toggle_off": {"type": "string", "minLength": 1},
+                "seg2_on": {"type": "string", "minLength": 1},
+                "seg2_off": {"type": "string", "minLength": 1},
+                "seg3_on": {"type": "string", "minLength": 1},
+                "seg3_off": {"type": "string", "minLength": 1},
+                "seg4_on": {"type": "string", "minLength": 1},
+                "seg4_off": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": false,
+            "examples": [
+                {"toggle_on": "lever_up.png", "toggle_off": "lever_down.png"}
+            ]
         }
     },
     "additionalProperties": false,
